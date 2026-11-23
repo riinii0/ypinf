@@ -1,0 +1,70 @@
+{
+  "_comment": "개발·테스트용 임의 구조의 목업 데이터. 실제 온통청년 API 응답 형식과 무관하며, 공식 명세 확인 후 src/lib/sources/youthcenter.ts에서 매핑을 작성한다.",
+  "items": [
+    {
+      "id": "MOCK-YC-001",
+      "title": "[예시] 중앙 청년 주거 안정 지원금",
+      "agency": "국토교통부(예시)",
+      "regionLevel": "CENTRAL",
+      "category": "HOUSING",
+      "summary": "[예시] 동기화 파이프라인 점검용 가짜 정책 데이터 (마감 D-3).",
+      "applyUrl": "https://www.bokjiro.go.kr",
+      "detailUrl": "https://www.bokjiro.go.kr",
+      "daysOffsetStart": -20,
+      "daysOffsetEnd": 3,
+      "isAlwaysOpen": false
+    },
+    {
+      "id": "MOCK-YC-002",
+      "title": "[예시] 중앙 청년 취업 준비 수당",
+      "agency": "고용노동부(예시)",
+      "regionLevel": "CENTRAL",
+      "category": "JOB",
+      "summary": "[예시] 동기화 파이프라인 점검용 가짜 정책 데이터 (마감 D-12).",
+      "applyUrl": "https://www.work24.go.kr",
+      "detailUrl": "https://www.work24.go.kr",
+      "daysOffsetStart": -15,
+      "daysOffsetEnd": 12,
+      "isAlwaysOpen": false
+    },
+    {
+      "id": "MOCK-YC-003",
+      "title": "[예시] 중앙 청년 자격증 취득 장려금",
+      "agency": "고용노동부(예시)",
+      "regionLevel": "CENTRAL",
+      "category": "EDUCATION",
+      "summary": "[예시] 동기화 파이프라인 점검용 가짜 정책 데이터 (마감 D-40).",
+      "applyUrl": "https://www.work24.go.kr",
+      "detailUrl": "https://www.work24.go.kr",
+      "daysOffsetStart": -5,
+      "daysOffsetEnd": 40,
+      "isAlwaysOpen": false
+    },
+    {
+      "id": "MOCK-YC-004",
+      "title": "[예시] 중앙 청년 교통비 환급 사업",
+      "agency": "국토교통부(예시)",
+      "regionLevel": "CENTRAL",
+      "category": "FINANCE",
+      "summary": "[예시] 동기화 파이프라인 점검용 가짜 정책 데이터 (상시 모집).",
+      "applyUrl": "https://korea-pass.kr",
+      "detailUrl": "https://korea-pass.kr",
+      "daysOffsetStart": null,
+      "daysOffsetEnd": null,
+      "isAlwaysOpen": true
+    },
+    {
+      "id": "MOCK-YC-005",
+      "title": "[예시] 중앙 청년 문화 바우처(마감)",
+      "agency": "문화체육관광부(예시)",
+      "regionLevel": "CENTRAL",
+      "category": "WELFARE",
+      "summary": "[예시] 동기화 파이프라인 점검용 가짜 정책 데이터 (마감 지남).",
+      "applyUrl": "https://www.bokjiro.go.kr",
+      "detailUrl": "https://www.bokjiro.go.kr",
+      "daysOffsetStart": -60,
+      "daysOffsetEnd": -5,
+      "isAlwaysOpen": false
+    }
+  ]
+}

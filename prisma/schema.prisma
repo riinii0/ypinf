@@ -1,0 +1,259 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// 데이터 출처 구분
+enum Source {
+  YOUTHCENTER   // 온통청년 청년정책 API
+  LOCAL_WELFARE // 공공데이터포털 지자체복지서비스 API
+  MANUAL        // 수기 입력(시드 CSV)
+}
+
+/// 정책 관할 지역 단위
+enum RegionLevel {
+  CENTRAL // 중앙부처
+  SEOUL   // 서울시
+  DONGJAK // 동작구
+}
+
+/// 정책 분야
+enum Category {
+  HOUSING   // 주거
+  JOB       // 일자리/취업
+  EDUCATION // 교육/자격증
+  FINANCE   // 금융/생활비
+  WELFARE   // 복지/문화
+}
+
+/// 사용자 현재 상태
+enum UserStatus {
+  STUDENT   // 재학
+  LEAVE     // 휴학
+  JOBSEEKER // 구직
+  EMPLOYED  // 재직
+}
+
+/// 사용자 거주 지역 입력
+enum RegionInput {
+  DONGJAK       // 동작구
+  SEOUL_OTHER   // 서울 기타 자치구
+  OUTSIDE_SEOUL // 서울 외
+}
+
+/// 사용자 본인 연소득 구간 (세전 기준)
+enum IncomeBracket {
+  NONE      // 소득 없음
+  UNDER_12M // 1,200만 원 이하
+  UNDER_24M // 2,400만 원 이하
+  UNDER_36M // 3,600만 원 이하
+  UNDER_50M // 5,000만 원 이하
+  OVER_50M  // 5,000만 원 초과
+}
+
+/// 판정 규칙 검수 상태
+enum RuleStatus {
+  DRAFT    // 검수 전
+  APPROVED // 검수 완료
+}
+
+/// 자격 판정 3단계
+enum Verdict {
+  ELIGIBLE   // 해당됨
+  CHECK      // 확인 필요
+  INELIGIBLE // 해당 없음
+}
+
+/// 신청 기록 상태
+enum ApplicationState {
+  APPLIED  // 신청함
+  RECEIVED // 수령함
+}
+
+/// 외부 API 동기화 상태
+enum SyncStatus {
+  SUCCESS // 성공
+  FAILED  // 실패
+  SKIPPED // 키 미설정 등으로 건너뜀
+}
+
+/// 퍼널 이벤트 유형 (사용자 테스트 측정용)
+enum FunnelEventType {
+  VISIT       // 방문
+  INPUT_START // 입력 시작
+  RESULT_VIEW // 결과 조회
+  DETAIL_VIEW // 상세 조회
+  APPLY_CLICK // 공식 신청 클릭
+}
+
+/// 정책 원본 및 공통 표시 정보
+model Policy {
+  id           String      @id @default(cuid()) // 내부 정책 ID
+  source       Source      // 데이터 출처
+  externalId   String      // 외부 API 정책 ID (MANUAL은 자체 코드)
+  title        String      // 정책명
+  agency       String      // 담당 기관
+  regionLevel  RegionLevel // 관할 지역 단위
+  category     Category    // 정책 분야
+  summary      String      // 정책 요약 설명
+  applyUrl     String?     // 공식 신청 링크
+  detailUrl    String?     // 공고 원문 링크
+  applyStart   DateTime?   // 신청 시작일
+  applyEnd     DateTime?   // 신청 마감일
+  isAlwaysOpen Boolean     @default(false) // 상시 모집 여부
+  rawJson      Json?       // 외부 API 원본 응답 전체 보관
+  syncedAt     DateTime    @default(now()) // 마지막 동기화 시각
+  isActive     Boolean     @default(true) // 활성 여부 (동기화 누락 시 false)
+  createdAt    DateTime    @default(now()) // 생성 시각
+  updatedAt    DateTime    @updatedAt // 수정 시각
+
+  rule         EligibilityRule?    // 1:1 판정 규칙
+  favorites    Favorite[]          // 관심 저장 목록
+  applications ApplicationRecord[] // 신청 기록 목록
+  clickLogs    ApplyClickLog[]     // 신청 클릭 로그
+
+  @@unique([source, externalId])
+  @@index([isActive, regionLevel])
+  @@index([isActive, category])
+}
+
+/// 사람이 검수하는 판정 규칙 (Policy와 1:1)
+model EligibilityRule {
+  id                  String         @id @default(cuid()) // 규칙 ID
+  policyId            String         @unique // 정책 ID (1:1)
+  minAge              Int?           // 최소 만 나이 (null이면 제한 없음)
+  maxAge              Int?           // 최대 만 나이 (null이면 제한 없음)
+  allowedRegions      RegionInput[]  // 허용 거주 지역 (비어 있으면 전국)
+  minIncomeBracket    IncomeBracket? // 최소 연소득 구간 (근로소득 필수 사업 등)
+  maxIncomeBracket    IncomeBracket? // 확실히 기준 이하인 최대 연소득 구간
+  borderIncomeBracket IncomeBracket? // 기준선이 걸친 경계 연소득 구간 (해당 시 CHECK)
+  allowedStatuses     UserStatus[]   // 허용 상태 (비어 있으면 제한 없음)
+  extraConditions     String[]       // 4개 입력으로 판정 불가한 추가 조건 (있으면 최대 CHECK)
+  estimatedAmount     Int?           // 최대 예상 수령액 (원 단위, 없으면 null)
+  amountNote          String?        // 금액 산식 설명 (예: 월 20만 원 × 24개월)
+  documents           String[]       // 제출 서류 목록
+  evidenceText        String?        // 자격·금액 근거 문장 원문
+  evidenceUrl         String?        // 근거 공고 URL
+  year                Int            @default(2026) // 기준 연도
+  status              RuleStatus     @default(DRAFT) // 검수 상태
+  reviewedBy          String?        // 검수자 이름
+  reviewedAt          DateTime?      // 검수 완료 시각
+  updatedAt           DateTime       @updatedAt // 수정 시각
+
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+}
+
+/// 로그인 사용자 프로필
+model UserProfile {
+  id              String        @id @default(cuid()) // 프로필 ID
+  userId          String        @unique // Supabase Auth UUID
+  age             Int           // 만 나이
+  region          RegionInput   // 거주 지역
+  incomeBracket   IncomeBracket // 본인 연소득 구간
+  status          UserStatus    // 현재 상태
+  notifyNewPolicy Boolean       @default(false) // 새 정책 알림 수신 여부
+  updatedAt       DateTime      @updatedAt // 수정 시각
+}
+
+/// 관심 저장 및 마감 알림 설정
+model Favorite {
+  id            String   @id @default(cuid()) // 관심 ID
+  userId        String   // Supabase Auth UUID
+  policyId      String   // 정책 ID
+  notifyEnabled Boolean  @default(true) // 마감 알림 활성화 여부
+  createdAt     DateTime @default(now()) // 저장 시각
+
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, policyId])
+  @@index([userId])
+}
+
+/// 정책 신청 및 수령 기록
+model ApplicationRecord {
+  id             String           @id @default(cuid()) // 기록 ID
+  userId         String           // Supabase Auth UUID
+  policyId       String           // 정책 ID
+  state          ApplicationState @default(APPLIED) // 신청함 / 수령함
+  receivedAmount Int?             // 실제 수령액 (원 단위, 선택)
+  createdAt      DateTime         @default(now()) // 기록 시각
+  updatedAt      DateTime         @updatedAt // 수정 시각
+
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, policyId])
+  @@index([userId])
+}
+
+/// 익명 진단 로그 (핵심 지표 집계용)
+model DiagnosisLog {
+  id                   String        @id @default(cuid()) // 로그 ID
+  sessionId            String        // 브라우저 익명 세션 ID
+  age                  Int           // 입력 나이
+  region               RegionInput   // 입력 지역
+  incomeBracket        IncomeBracket // 입력 소득 구간
+  status               UserStatus    // 입력 상태
+  eligibleCount        Int           // 해당됨 정책 수
+  checkCount           Int           // 확인 필요 정책 수
+  totalEstimatedAmount Int           // 최대 예상 수령액 합계(원)
+  durationMs           Int?          // 입력 시작~결과 표시 소요 시간(ms)
+  createdAt            DateTime      @default(now()) // 기록 시각
+
+  @@index([sessionId])
+  @@index([createdAt])
+}
+
+/// 익명 신청 링크 클릭 로그 (최중요 핵심 지표)
+model ApplyClickLog {
+  id        String   @id @default(cuid()) // 로그 ID
+  sessionId String   // 브라우저 익명 세션 ID
+  policyId  String   // 클릭한 정책 ID
+  fromPage  String   // 유입 페이지 (result/detail/browse/calendar)
+  createdAt DateTime @default(now()) // 클릭 시각
+
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([policyId])
+}
+
+/// 외부 공공데이터 API 동기화 기록
+model SyncLog {
+  id            String     @id @default(cuid()) // 동기화 ID
+  source        Source     // 동기화 대상 소스
+  startedAt     DateTime   @default(now()) // 시작 시각
+  finishedAt    DateTime?  // 종료 시각
+  status        SyncStatus // 성공/실패/건너뜀
+  fetchedCount  Int        @default(0) // 조회 건수
+  upsertedCount Int        @default(0) // 저장·갱신 건수
+  errorMessage  String?    // 오류 메시지
+}
+
+/// 사용자 테스트 피드백 (피치덱 근거 수집용)
+model Feedback {
+  id             String   @id @default(cuid()) // 피드백 ID
+  sessionId      String   // 브라우저 익명 세션 ID
+  newPolicyCount Int      // 처음 알게 된 정책 수
+  applyIntent    Int      // 신청 의향 (1~5)
+  comment        String?  // 자유 의견
+  createdAt      DateTime @default(now()) // 제출 시각
+
+  @@index([createdAt])
+}
+
+/// 퍼널 이벤트 로그 (입력 완료율·전환율 측정)
+model FunnelEvent {
+  id        String          @id @default(cuid()) // 이벤트 ID
+  sessionId String          // 브라우저 익명 세션 ID
+  type      FunnelEventType // 이벤트 유형
+  policyId  String?         // 관련 정책 ID (선택)
+  createdAt DateTime        @default(now()) // 발생 시각
+
+  @@index([type, sessionId])
+  @@index([createdAt])
+}

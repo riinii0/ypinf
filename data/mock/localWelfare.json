@@ -1,0 +1,70 @@
+{
+  "_comment": "개발·테스트용 임의 구조의 목업 데이터. 실제 한국사회보장정보원 지자체복지서비스 API 응답 형식과 무관하며, 공식 명세 확인 후 src/lib/sources/localWelfare.ts에서 매핑을 작성한다.",
+  "items": [
+    {
+      "id": "MOCK-LW-001",
+      "title": "[예시] 서울시 청년 월세 보조금",
+      "agency": "서울특별시(예시)",
+      "regionLevel": "SEOUL",
+      "category": "HOUSING",
+      "summary": "[예시] 지자체 동기화 점검용 가짜 정책 데이터 (마감 D-3).",
+      "applyUrl": "https://housing.seoul.go.kr",
+      "detailUrl": "https://housing.seoul.go.kr",
+      "daysOffsetStart": -14,
+      "daysOffsetEnd": 3,
+      "isAlwaysOpen": false
+    },
+    {
+      "id": "MOCK-LW-002",
+      "title": "[예시] 동작구 청년 어학 응시료 지원",
+      "agency": "동작구(예시)",
+      "regionLevel": "DONGJAK",
+      "category": "EDUCATION",
+      "summary": "[예시] 지자체 동기화 점검용 가짜 정책 데이터 (마감 D-12).",
+      "applyUrl": "https://www.dongjak.go.kr",
+      "detailUrl": "https://www.dongjak.go.kr",
+      "daysOffsetStart": -30,
+      "daysOffsetEnd": 12,
+      "isAlwaysOpen": false
+    },
+    {
+      "id": "MOCK-LW-003",
+      "title": "[예시] 서울시 청년 자산형성 매칭 사업",
+      "agency": "서울특별시(예시)",
+      "regionLevel": "SEOUL",
+      "category": "FINANCE",
+      "summary": "[예시] 지자체 동기화 점검용 가짜 정책 데이터 (마감 D-40).",
+      "applyUrl": "https://www.welfare.seoul.kr",
+      "detailUrl": "https://www.welfare.seoul.kr",
+      "daysOffsetStart": -10,
+      "daysOffsetEnd": 40,
+      "isAlwaysOpen": false
+    },
+    {
+      "id": "MOCK-LW-004",
+      "title": "[예시] 동작구 청년 면접정장 대여",
+      "agency": "동작구(예시)",
+      "regionLevel": "DONGJAK",
+      "category": "JOB",
+      "summary": "[예시] 지자체 동기화 점검용 가짜 정책 데이터 (상시 모집).",
+      "applyUrl": "https://www.dongjak.go.kr",
+      "detailUrl": "https://www.dongjak.go.kr",
+      "daysOffsetStart": null,
+      "daysOffsetEnd": null,
+      "isAlwaysOpen": true
+    },
+    {
+      "id": "MOCK-LW-005",
+      "title": "[예시] 서울시 청년 마음건강 상담(마감)",
+      "agency": "서울특별시(예시)",
+      "regionLevel": "SEOUL",
+      "category": "WELFARE",
+      "summary": "[예시] 지자체 동기화 점검용 가짜 정책 데이터 (마감 지남).",
+      "applyUrl": "https://youth.seoul.go.kr",
+      "detailUrl": "https://youth.seoul.go.kr",
+      "daysOffsetStart": -45,
+      "daysOffsetEnd": -10,
+      "isAlwaysOpen": false
+    }
+  ]
+}
