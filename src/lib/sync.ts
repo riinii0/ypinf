@@ -52,58 +52,62 @@ export async function syncAllSources(): Promise<SourceSyncResult[]> {
 
     try {
       const rawItems = await source.fetchAll();
-      const syncedExternalIds: string[] = [];
-      let upsertedCount = 0;
+      const normalizedItems = rawItems
+        .map((rawItem) => source.normalize(rawItem))
+        .filter((item): item is NonNullable<typeof item> => item !== null);
 
-      for (const rawItem of rawItems) {
-        const normalized = source.normalize(rawItem);
-        if (!normalized) continue;
+      const syncedExternalIds = normalizedItems.map((item) => item.externalId);
+      const BATCH_SIZE = 20;
 
-        syncedExternalIds.push(normalized.externalId);
-
-        await prisma.policy.upsert({
-          where: {
-            source_externalId: {
-              source: normalized.source,
-              externalId: normalized.externalId,
-            },
-          },
-          update: {
-            title: normalized.title,
-            agency: normalized.agency,
-            regionLevel: normalized.regionLevel,
-            category: normalized.category,
-            summary: normalized.summary,
-            applyUrl: normalized.applyUrl,
-            detailUrl: normalized.detailUrl,
-            applyStart: normalized.applyStart,
-            applyEnd: normalized.applyEnd,
-            isAlwaysOpen: normalized.isAlwaysOpen,
-            rawJson: normalized.raw as Prisma.InputJsonValue,
-            syncedAt: new Date(),
-            isActive: true,
-          },
-          create: {
-            source: normalized.source,
-            externalId: normalized.externalId,
-            title: normalized.title,
-            agency: normalized.agency,
-            regionLevel: normalized.regionLevel,
-            category: normalized.category,
-            summary: normalized.summary,
-            applyUrl: normalized.applyUrl,
-            detailUrl: normalized.detailUrl,
-            applyStart: normalized.applyStart,
-            applyEnd: normalized.applyEnd,
-            isAlwaysOpen: normalized.isAlwaysOpen,
-            rawJson: normalized.raw as Prisma.InputJsonValue,
-            syncedAt: new Date(),
-            isActive: true,
-          },
-        });
-
-        upsertedCount += 1;
+      for (let i = 0; i < normalizedItems.length; i += BATCH_SIZE) {
+        const chunk = normalizedItems.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          chunk.map((normalized) =>
+            prisma.policy.upsert({
+              where: {
+                source_externalId: {
+                  source: normalized.source,
+                  externalId: normalized.externalId,
+                },
+              },
+              update: {
+                title: normalized.title,
+                agency: normalized.agency,
+                regionLevel: normalized.regionLevel,
+                category: normalized.category,
+                summary: normalized.summary,
+                applyUrl: normalized.applyUrl,
+                detailUrl: normalized.detailUrl,
+                applyStart: normalized.applyStart,
+                applyEnd: normalized.applyEnd,
+                isAlwaysOpen: normalized.isAlwaysOpen,
+                rawJson: normalized.raw as Prisma.InputJsonValue,
+                syncedAt: new Date(),
+                isActive: true,
+              },
+              create: {
+                source: normalized.source,
+                externalId: normalized.externalId,
+                title: normalized.title,
+                agency: normalized.agency,
+                regionLevel: normalized.regionLevel,
+                category: normalized.category,
+                summary: normalized.summary,
+                applyUrl: normalized.applyUrl,
+                detailUrl: normalized.detailUrl,
+                applyStart: normalized.applyStart,
+                applyEnd: normalized.applyEnd,
+                isAlwaysOpen: normalized.isAlwaysOpen,
+                rawJson: normalized.raw as Prisma.InputJsonValue,
+                syncedAt: new Date(),
+                isActive: true,
+              },
+            })
+          )
+        );
       }
+
+      const upsertedCount = normalizedItems.length;
 
       const deactivated = await prisma.policy.updateMany({
         where: {

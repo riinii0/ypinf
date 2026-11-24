@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { syncAllSources } from "@/lib/sync";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 function isAuthorized(req: NextRequest): boolean {
   const syncSecret = process.env.SYNC_SECRET;
   const cronSecret = process.env.CRON_SECRET;
