@@ -164,7 +164,7 @@ export class YouthCenterSource implements PolicySource {
 
     while (pageNum <= MAX_PAGES && collected.length < totalCount) {
       if (pageNum > 1) {
-        await new Promise((resolve) => setTimeout(resolve, 400));
+        await new Promise((resolve) => setTimeout(resolve, 250));
       }
 
       const params = new URLSearchParams({
@@ -181,6 +181,7 @@ export class YouthCenterSource implements PolicySource {
           "User-Agent": "YouthBenefitFinder/1.0",
         },
         cache: "no-store",
+        signal: AbortSignal.timeout(12000),
       });
 
       if (res.status === 403 || res.status === 429) {
