@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
   const profile = { age, region, incomeBracket, status };
 
   const policies = await prisma.policy.findMany({
-    where: { isActive: true },
+    where: { isActive: true, rule: { isNot: null } },
     include: { rule: true },
   });
 

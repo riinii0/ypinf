@@ -1,21 +1,145 @@
 /**
- * 한국고용정보원 온통청년 청년정책 API 소스
- *
- * [승인 후 채워야 할 항목 체크리스트]
- * 1. 공식 명세에서 요청 URL(엔드포인트), HTTP 메서드, 필수 파라미터(인증키 파라미터명 포함) 확인
- * 2. 페이지네이션 파라미터(페이지 번호, 페이지당 건수, 전체 건수 필드명) 확인
- * 3. 응답 형식(JSON / XML) 확인 및 필요 시 XML 파서 적용
- * 4. 범위 필터(중앙부처·서울시·서울 동작구)를 요청 파라미터로 걸지, normalize 단계에서 걸지 결정
- * 5. 아래 normalize() 매핑 표의 "TODO 명세 필드명"을 실제 응답 필드명으로 교체
- * 6. .env에 YOUTHCENTER_API_KEY 입력 후 DATA_SOURCE_MODE=live에서 npm run sync 테스트
+ * 한국고용정보원 온통청년 청년정책 Open API 소스
+ * - 공식 엔드포인트: GET https://www.youthcenter.go.kr/go/ythip/getPlcy
+ * - 필수 파라미터: apiKeyNm, rtnType=json, pageNum, pageSize
+ * - 범위 필터: 중앙부처(pvsnInstGroupCd=0054001) + 서울시·동작구(pvsnInstGroupCd=0054002 중 서울/동작구 소관)
  */
 
-import { Source } from "@prisma/client";
-import {
-  NotImplementedError,
-  type NormalizedPolicy,
-  type PolicySource,
-} from "./types";
+import { Category, RegionLevel, Source } from "@prisma/client";
+import type { NormalizedPolicy, PolicySource } from "./types";
+
+const ENDPOINT = "https://www.youthcenter.go.kr/go/ythip/getPlcy";
+const PAGE_SIZE = 100;
+const MAX_PAGES = 10; // 최대 1,000건 (zipCd=11590 기준 약 800건)
+
+interface YouthCenterRawItem {
+  plcyNo?: string;
+  plcyNm?: string;
+  plcyExplnCn?: string;
+  plcySprtCn?: string;
+  lclsfNm?: string;
+  mclsfNm?: string;
+  pvsnInstGroupCd?: string;
+  sprvsnInstCdNm?: string;
+  operInstCdNm?: string;
+  rgtrInstCdNm?: string;
+  rgtrHghrkInstCdNm?: string;
+  aplyPrdSeCd?: string;
+  aplyYmd?: string;
+  bizPrdBgngYmd?: string;
+  bizPrdEndYmd?: string;
+  aplyUrlAddr?: string;
+  refUrlAddr1?: string;
+  zipCd?: string;
+}
+
+interface YouthCenterApiResponse {
+  resultCode?: number;
+  resultMessage?: string;
+  result?: {
+    pagging?: {
+      totCount?: number;
+      pageNum?: number;
+      pageSize?: number;
+    };
+    youthPolicyList?: YouthCenterRawItem[];
+  };
+}
+
+function parseYmd(raw?: string): Date | null {
+  const digits = (raw ?? "").replace(/\D/g, "");
+  if (digits.length !== 8) return null;
+  const y = Number(digits.slice(0, 4));
+  const m = Number(digits.slice(4, 6));
+  const d = Number(digits.slice(6, 8));
+  if (y < 2000 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+function parseAplyYmdRange(aplyYmd?: string): { start: Date | null; end: Date | null } {
+  const text = (aplyYmd ?? "").trim();
+  if (!text) return { start: null, end: null };
+  // 여러 회차가 줄바꿈으로 들어온 경우 마지막(최신) 회차 사용
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const lastLine = lines[lines.length - 1] ?? text;
+  const parts = lastLine.split("~").map((p) => p.trim());
+  if (parts.length >= 2) {
+    return {
+      start: parseYmd(parts[0]),
+      end: parseYmd(parts[1]),
+    };
+  }
+  return { start: null, end: parseYmd(lastLine) };
+}
+
+function resolveRegionLevel(item: YouthCenterRawItem): RegionLevel | null {
+  // 중앙부처
+  if (item.pvsnInstGroupCd === "0054001") {
+    return RegionLevel.CENTRAL;
+  }
+
+  // 지자체(0054002): 서울특별시 또는 동작구 소관만 포함 (타 시도 제외)
+  const instText = [
+    item.sprvsnInstCdNm,
+    item.operInstCdNm,
+    item.rgtrInstCdNm,
+    item.rgtrHghrkInstCdNm,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const zipList = (item.zipCd ?? "")
+    .split(",")
+    .map((z) => z.trim())
+    .filter(Boolean);
+
+  if (instText.includes("동작구") || (zipList.length === 1 && zipList[0] === "11590")) {
+    return RegionLevel.DONGJAK;
+  }
+
+  const isSeoulAll =
+    zipList.length > 0 && zipList.every((z) => z.startsWith("11")) && zipList.length >= 20;
+
+  if (instText.includes("서울") || isSeoulAll) {
+    return RegionLevel.SEOUL;
+  }
+
+  return null;
+}
+
+function mapCategory(item: YouthCenterRawItem): Category {
+  const lclsf = (item.lclsfNm ?? "").trim();
+  const mclsf = (item.mclsfNm ?? "").trim();
+  const title = (item.plcyNm ?? "").trim();
+
+  if (lclsf.includes("주거")) return Category.HOUSING;
+  if (lclsf.includes("일자리")) return Category.JOB;
+  if (lclsf.includes("교육") || lclsf.includes("훈련")) return Category.EDUCATION;
+  if (
+    lclsf.includes("금융") &&
+    (mclsf.includes("금융") ||
+      mclsf.includes("자산") ||
+      title.includes("적금") ||
+      title.includes("통장") ||
+      title.includes("교통") ||
+      title.includes("생활비"))
+  ) {
+    return Category.FINANCE;
+  }
+  return Category.WELFARE;
+}
+
+function sanitizeUrl(raw?: string): string | null {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+  return null;
+}
 
 export class YouthCenterSource implements PolicySource {
   readonly name = Source.YOUTHCENTER;
@@ -29,45 +153,135 @@ export class YouthCenterSource implements PolicySource {
   }
 
   async fetchAll(): Promise<unknown[]> {
-    if (!this.isConfigured()) {
+    const apiKey = this.getApiKey();
+    if (!apiKey) {
       throw new Error("YOUTHCENTER_API_KEY가 설정되지 않았습니다.");
     }
 
-    // TODO(API_SPEC): 공식 명세 확인 후 작성
-    // - 요청 URL
-    // - 쿼리 파라미터 (API 키, 페이지 번호, 페이지 크기, 지역/분야 필터 등)
-    // - 페이지네이션 반복 조회
-    // - 응답 형식(JSON/XML) 파싱 및 항목 배열 반환
-    throw new NotImplementedError(
-      "온통청년 API fetchAll()은 공식 명세 확인 후 구현해야 합니다. (docs/API_TODO.md 참고)"
-    );
+    const collected: YouthCenterRawItem[] = [];
+    let pageNum = 1;
+    let totalCount = Number.POSITIVE_INFINITY;
+
+    while (pageNum <= MAX_PAGES && collected.length < totalCount) {
+      if (pageNum > 1) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+
+      const params = new URLSearchParams({
+        apiKeyNm: apiKey,
+        rtnType: "json",
+        zipCd: "11590", // 중앙부처(전국) + 서울시 + 동작구 포함 대상 조회
+        pageNum: String(pageNum),
+        pageSize: String(PAGE_SIZE),
+      });
+
+      const res = await fetch(`${ENDPOINT}?${params.toString()}`, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "YouthBenefitFinder/1.0",
+        },
+        cache: "no-store",
+      });
+
+      if (res.status === 403 || res.status === 429) {
+        // WAF 일시 속도 제한 시 1회 백오프 후 재시도
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const retryRes = await fetch(`${ENDPOINT}?${params.toString()}`, {
+          headers: {
+            Accept: "application/json",
+            "User-Agent": "YouthBenefitFinder/1.0",
+          },
+          cache: "no-store",
+        });
+        if (!retryRes.ok) {
+          throw new Error(`온통청년 API HTTP 오류: ${retryRes.status} (page ${pageNum})`);
+        }
+        const retryData = (await retryRes.json()) as YouthCenterApiResponse;
+        const retryList = retryData.result?.youthPolicyList ?? [];
+        totalCount = retryData.result?.pagging?.totCount ?? retryList.length;
+        if (retryList.length === 0) break;
+        collected.push(...retryList);
+        if (retryList.length < PAGE_SIZE) break;
+        pageNum += 1;
+        continue;
+      }
+
+      if (!res.ok) {
+        throw new Error(`온통청년 API HTTP 오류: ${res.status} (page ${pageNum})`);
+      }
+
+      const data = (await res.json()) as YouthCenterApiResponse;
+      if (data.resultCode !== 200) {
+        throw new Error(
+          `온통청년 API 응답 오류(${data.resultCode}): ${data.resultMessage ?? "알 수 없음"}`
+        );
+      }
+
+      const list = data.result?.youthPolicyList ?? [];
+      totalCount = data.result?.pagging?.totCount ?? list.length;
+
+      if (list.length === 0) break;
+      collected.push(...list);
+
+      if (list.length < PAGE_SIZE) break;
+      pageNum += 1;
+    }
+
+    return collected;
   }
 
   normalize(raw: unknown): NormalizedPolicy | null {
     if (!raw || typeof raw !== "object") {
-      console.warn("[YOUTHCENTER] 잘못된 원본 항목을 건너뜁니다.");
       return null;
     }
 
-    // TODO(API_SPEC): 공식 명세 확인 후 아래 매핑 표를 실제 필드명으로 채운다.
-    // -------------------------------------------------------------
-    // 우리 필드        | TODO 명세 필드명
-    // -------------------------------------------------------------
-    // externalId      | TODO 명세 필드명 (정책 고유 ID)
-    // title           | TODO 명세 필드명 (정책명)
-    // agency          | TODO 명세 필드명 (주관 기관명)
-    // regionLevel     | TODO 명세 필드명 -> CENTRAL / SEOUL / DONGJAK 변환
-    // category        | TODO 명세 필드명 -> HOUSING / JOB / EDUCATION / FINANCE / WELFARE 변환
-    // summary         | TODO 명세 필드명 (정책 소개/지원 내용 요약)
-    // applyUrl        | TODO 명세 필드명 (신청 사이트 URL)
-    // detailUrl       | TODO 명세 필드명 (공고 원문 URL)
-    // applyStart      | TODO 명세 필드명 (신청 시작일)
-    // applyEnd        | TODO 명세 필드명 (신청 마감일)
-    // isAlwaysOpen    | TODO 명세 필드명 (상시 모집 여부 판단 기준)
-    // -------------------------------------------------------------
-    // TODO(API_SPEC): 범위 필터(중앙부처·서울시·서울 동작구 외 제외 시 null 반환)
+    const item = raw as YouthCenterRawItem;
+    const externalId = (item.plcyNo ?? "").trim();
+    const title = (item.plcyNm ?? "").trim();
+    if (!externalId || !title) {
+      return null;
+    }
 
-    console.warn("[YOUTHCENTER] normalize()가 아직 명세와 연결되지 않았습니다.");
-    return null;
+    const regionLevel = resolveRegionLevel(item);
+    if (!regionLevel) {
+      return null;
+    }
+
+    const agency =
+      (item.sprvsnInstCdNm ?? "").trim() ||
+      (item.operInstCdNm ?? "").trim() ||
+      (item.rgtrInstCdNm ?? "").trim() ||
+      (regionLevel === RegionLevel.CENTRAL ? "중앙부처" : "서울특별시");
+
+    const isAlwaysOpen = item.aplyPrdSeCd === "0057002";
+    const parsedRange = parseAplyYmdRange(item.aplyYmd);
+    const applyStart = parsedRange.start ?? parseYmd(item.bizPrdBgngYmd);
+    const applyEnd = isAlwaysOpen ? null : (parsedRange.end ?? parseYmd(item.bizPrdEndYmd));
+
+    const summary =
+      (item.plcyExplnCn ?? "").trim() ||
+      (item.plcySprtCn ?? "").trim().slice(0, 300) ||
+      title;
+
+    const applyUrl = sanitizeUrl(item.aplyUrlAddr);
+    const detailUrl =
+      sanitizeUrl(item.refUrlAddr1) ??
+      `https://www.youthcenter.go.kr/youthPolicy/ythPlcyTotalSearch/ythPlcyDetail/${externalId}`;
+
+    return {
+      source: Source.YOUTHCENTER,
+      externalId,
+      title,
+      agency,
+      regionLevel,
+      category: mapCategory(item),
+      summary,
+      applyUrl,
+      detailUrl,
+      applyStart,
+      applyEnd,
+      isAlwaysOpen,
+      raw,
+    };
   }
 }
